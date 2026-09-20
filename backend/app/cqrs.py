@@ -13,6 +13,17 @@ from app.models import EventStore, RunProjection
 
 TERMINAL_STATUSES = {"completed", "aborted"}
 
+# All event types accepted by the event store. Filtering must be delegated to the
+# server so the timeline stays consistent with what /events actually returns;
+# keep these in sync with _apply_event_to_projection.
+EVENT_TYPES = (
+    "RunStarted",
+    "MetricRecorded",
+    "ArtifactAttached",
+    "RunCompleted",
+    "RunAborted",
+)
+
 
 class DomainError(Exception):
     def __init__(self, message: str, status_code: int = 400):
@@ -300,12 +311,18 @@ def abort_run(
     return proj
 
 
-def list_events(db: Session, run_id: UUID) -> list[EventStore]:
+def list_events(
+    db: Session,
+    run_id: UUID,
+    event_types: list[str] | tuple[str, ...] | None = None,
+) -> list[EventStore]:
     stmt = (
         select(EventStore)
         .where(EventStore.aggregate_id == run_id)
         .order_by(EventStore.version.asc())
     )
+    if event_types:
+        stmt = stmt.where(EventStore.event_type.in_(list(event_types)))
     return list(db.scalars(stmt).all())
 
 

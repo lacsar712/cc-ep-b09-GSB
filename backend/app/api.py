@@ -8,6 +8,7 @@ from app.auth import authenticate_user, create_access_token, get_current_user, r
 from app.cqrs import (
     ConflictError,
     DomainError,
+    EVENT_TYPES,
     abort_run,
     attach_artifact,
     complete_run,
@@ -187,16 +188,29 @@ def post_abort(
 @router.get("/runs/{run_id}/events", response_model=list[EventOut])
 def get_events(
     run_id: UUID,
+    event_type: list[str] | None = Query(default=None),
     db: Session = Depends(get_db),
     _user: dict = Depends(get_current_user),
 ):
+    # Timeline filtering is authoritative on the server: only known types are
+    # accepted, and the result keeps each event's original version number.
+    event_types: list[str] | None = None
+    if event_type:
+        invalid = [t for t in event_type if t not in EVENT_TYPES]
+        if invalid:
+            raise HTTPException(
+                status_code=422,
+                detail=f"未知事件类型: {', '.join(sorted(set(invalid)))}",
+            )
+        event_types = list(dict.fromkeys(event_type))
+
     if not db.get(RunProjection, run_id):
         # allow reading events even if projection missing, but typically exists
-        events = list_events(db, run_id)
+        events = list_events(db, run_id, event_types)
         if not events:
             raise HTTPException(status_code=404, detail="Run 不存在")
         return events
-    return list_events(db, run_id)
+    return list_events(db, run_id, event_types)
 
 
 @router.get("/runs/{run_id}/lineage", response_model=LineageOut)

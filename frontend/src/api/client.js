@@ -67,8 +67,17 @@ export async function abortRun(id, body) {
   return data
 }
 
-export async function getEvents(id) {
-  const { data } = await api.get(`/runs/${id}/events`)
+export async function getEvents(id, eventTypes = []) {
+  const types = Array.isArray(eventTypes) ? eventTypes.filter(Boolean) : []
+  if (!types.length) {
+    const { data } = await api.get(`/runs/${id}/events`)
+    return data
+  }
+  // Repeat the query param (?event_type=A&event_type=B) — FastAPI binds this
+  // to list[str]; axios' default array bracket serialization would not.
+  const params = new URLSearchParams()
+  for (const t of types) params.append('event_type', t)
+  const { data } = await api.get(`/runs/${id}/events`, { params })
   return data
 }
 
