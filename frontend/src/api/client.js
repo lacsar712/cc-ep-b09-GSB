@@ -67,8 +67,15 @@ export async function abortRun(id, body) {
   return data
 }
 
-export async function getEvents(id) {
-  const { data } = await api.get(`/runs/${id}/events`)
+export async function getEvents(id, eventTypes = []) {
+  // Repeat event_type as separate query params so FastAPI binds a list[str]:
+  // /events?event_type=MetricRecorded&event_type=RunCompleted
+  const search = new URLSearchParams()
+  for (const type of eventTypes || []) {
+    search.append('event_type', type)
+  }
+  const qs = search.toString()
+  const { data } = await api.get(`/runs/${id}/events${qs ? `?${qs}` : ''}`)
   return data
 }
 

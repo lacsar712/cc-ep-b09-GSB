@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Sequence
 from uuid import UUID, uuid4
 
 from sqlalchemy import select
@@ -12,6 +12,15 @@ from app.models import EventStore, RunProjection
 
 
 TERMINAL_STATUSES = {"completed", "aborted"}
+
+# All domain event types the event store can contain, in lifecycle order.
+EVENT_TYPES: tuple[str, ...] = (
+    "RunStarted",
+    "MetricRecorded",
+    "ArtifactAttached",
+    "RunCompleted",
+    "RunAborted",
+)
 
 
 class DomainError(Exception):
@@ -300,12 +309,18 @@ def abort_run(
     return proj
 
 
-def list_events(db: Session, run_id: UUID) -> list[EventStore]:
+def list_events(
+    db: Session, run_id: UUID, event_types: Sequence[str] | None = None
+) -> list[EventStore]:
     stmt = (
         select(EventStore)
         .where(EventStore.aggregate_id == run_id)
         .order_by(EventStore.version.asc())
     )
+    if event_types:
+        # De-duplicate while preserving order; filtering is done in SQL so the
+        # returned timeline is exactly what the server stores for those types.
+        stmt = stmt.where(EventStore.event_type.in_(list(dict.fromkeys(event_types))))
     return list(db.scalars(stmt).all())
 
 

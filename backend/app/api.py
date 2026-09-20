@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.auth import authenticate_user, create_access_token, get_current_user, require_researcher
 from app.cqrs import (
+    EVENT_TYPES,
     ConflictError,
     DomainError,
     abort_run,
@@ -187,16 +188,25 @@ def post_abort(
 @router.get("/runs/{run_id}/events", response_model=list[EventOut])
 def get_events(
     run_id: UUID,
+    event_type: list[str] | None = Query(default=None),
     db: Session = Depends(get_db),
     _user: dict = Depends(get_current_user),
 ):
-    if not db.get(RunProjection, run_id):
-        # allow reading events even if projection missing, but typically exists
-        events = list_events(db, run_id)
-        if not events:
-            raise HTTPException(status_code=404, detail="Run 不存在")
-        return events
-    return list_events(db, run_id)
+    # The timeline exists if either the projection or any stored event exists.
+    # Checked independently of the filter so a type that happens to have no
+    # events still returns [] for a real run, rather than a misleading 404.
+    if not db.get(RunProjection, run_id) and not list_events(db, run_id):
+        raise HTTPException(status_code=404, detail="Run 不存在")
+
+    types = event_type or None
+    if types:
+        invalid = [t for t in types if t not in EVENT_TYPES]
+        if invalid:
+            raise HTTPException(
+                status_code=400,
+                detail=f"未知事件类型: {', '.join(dict.fromkeys(invalid))}",
+            )
+    return list_events(db, run_id, types)
 
 
 @router.get("/runs/{run_id}/lineage", response_model=LineageOut)
